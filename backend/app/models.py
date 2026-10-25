@@ -27,15 +27,15 @@ class Source(Base):
 
 
 class BudgetLine(Base):
-    """A revenue or outlay line. Outlays nest agency > bureau > program."""
+    """A revenue or outlay line. Outlays nest agency > bureau > budget account."""
 
     __tablename__ = "budget_lines"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    code: Mapped[str] = mapped_column(String(100), unique=True)
+    code: Mapped[str] = mapped_column(String(255), unique=True)
     name: Mapped[str] = mapped_column(Text)
     category: Mapped[str] = mapped_column(String(20))  # "revenue" or "outlay"
-    level: Mapped[str] = mapped_column(String(20))  # "source", "agency", "bureau", "program"
+    level: Mapped[str] = mapped_column(String(20))  # "source", "agency", "bureau", "account"
     parent_id: Mapped[int | None] = mapped_column(ForeignKey("budget_lines.id"))
 
     values: Mapped[list["BudgetValue"]] = relationship(back_populates="line")

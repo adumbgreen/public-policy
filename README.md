@@ -16,7 +16,9 @@ A scenario is a list of policies. You add each one from scratch or from a preset
 Presets are in `backend/app/presets.py`. The simulation engine isn't built yet, so every run fails with a message saying so. The engine needs two things this repo doesn't have yet:
 
 - PolicyEngine's household dataset, which is downloaded from Hugging Face
-- The budget baseline (CBO, OMB, Treasury) and VAT and health data (BLS, BEA, CMS)
+- VAT and health data (BLS, BEA, CMS)
+
+The CBO budget baseline is loaded (see "Data" below).
 
 ## Stack
 
@@ -36,7 +38,7 @@ Simulations run in a separate worker process because a microsimulation can take 
 docker compose up --build
 ```
 
-Then open http://localhost:8080. The API container applies database migrations on startup.
+Then open http://localhost:8080. The API container applies database migrations and loads the seed data on startup.
 
 ## Run it for development
 
@@ -49,6 +51,7 @@ You need Postgres 16, [uv](https://docs.astral.sh/uv/), and Node 22.
    cd backend
    uv sync
    uv run alembic upgrade head
+   uv run python -m app.seed
    uv run uvicorn app.main:app --reload
    ```
 
@@ -82,6 +85,17 @@ cd ../frontend
 npm run build
 ```
 
+## Data
+
+Seed data lives in `backend/data/seed/`, with one entry per file in `sources.json`. `python -m app.seed` replaces the `sources`, `budget_lines` and `budget_values` tables with it. Scenarios aren't touched.
+
+| Data | Source | Coverage |
+|---|---|---|
+| Revenue by source | CBO 10-Year Budget Projections, February 2026 | FY2025 actual, FY2026 to FY2036 projected |
+| Outlays by agency, bureau and budget account | CBO Spending Projections, by Budget Account, February 2026 | FY2026 to FY2036 |
+
+The CBO files come from CBO's open-data repository on GitHub ([US-CBO/cbo-data](https://github.com/US-CBO/cbo-data)), because cbo.gov blocks automated downloads. A test checks that agency, bureau and account outlays, and revenue by source, add up to CBO's published totals.
+
 ## Modeling decisions
 
 - **Income and payroll tax:** PolicyEngine-US microsimulation. A scenario stores tax changes as PolicyEngine parameter changes, so any PolicyEngine parameter can be changed.
@@ -101,6 +115,7 @@ backend/
     main.py        FastAPI app
     presets.py     Ready-made policies
     models.py      Database tables
+    seed.py        Loads backend/data/seed into the database
     schemas.py     API and scenario definition schemas
     engine.py      Scores a scenario (not built yet)
     runs.py        Queues runs and reuses cached ones
