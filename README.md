@@ -4,7 +4,16 @@ A web app for building federal tax and spending scenarios and seeing their effec
 
 ## Status
 
-This is the app scaffold. You can create, edit, save and share scenarios, and queue a simulation run. The simulation engine isn't built yet, so every run fails with a message saying so. The engine needs two things this repo doesn't have yet:
+This is the app scaffold. You can create, edit, save and share scenarios, and queue a simulation run.
+
+A scenario is a list of policies. You add each one from scratch or from a preset, then name and edit it. Policy types:
+
+- **Custom:** you enter the yearly change to spending or revenue, and optionally a source link.
+- **Income tax change:** changes to PolicyEngine parameters. The editor covers the standard deduction so far.
+- **Value-added tax:** a rate and excluded spending categories.
+- **Agency spending change** and **published estimate:** defined, but unavailable until the budget data is loaded.
+
+Presets are in `backend/app/presets.py`. The simulation engine isn't built yet, so every run fails with a message saying so. The engine needs two things this repo doesn't have yet:
 
 - PolicyEngine's household dataset, which is downloaded from Hugging Face
 - The budget baseline (CBO, OMB, Treasury) and VAT and health data (BLS, BEA, CMS)
@@ -80,7 +89,8 @@ npm run build
 - **Baseline:** policy changes are calculated with PolicyEngine and applied to CBO's baseline totals. PolicyEngine's own baseline revenue doesn't exactly match CBO's.
 - **VAT:** not modeled by PolicyEngine. Household spending will be estimated from the BLS Consumer Expenditure Survey and scaled to BEA personal consumption totals.
 - **Spending:** agency-level outlays. The `budget_lines` table nests agency, bureau and program, so program-level detail can be added later.
-- **National health insurance:** a choice of published cost estimates, or a simple model. Either one offsets current federal health spending.
+- **Published estimates:** policies such as national health insurance can use a cited cost estimate, or be entered as a custom policy.
+- **Inflation indexing:** income tax values use PolicyEngine's uprating for each parameter. Custom policies use CBO's inflation projection.
 - **Sources:** every seeded figure points to a row in the `sources` table, with publisher, title, URL, table or page, and retrieval date.
 
 ## Layout
@@ -89,6 +99,7 @@ npm run build
 backend/
   app/
     main.py        FastAPI app
+    presets.py     Ready-made policies
     models.py      Database tables
     schemas.py     API and scenario definition schemas
     engine.py      Scores a scenario (not built yet)
@@ -100,6 +111,7 @@ backend/
 frontend/
   src/
     api.ts         API client and types
+    components/    Policy editor card
     pages/         Scenario list, scenario editor, sources
 docker-compose.yml
 ```

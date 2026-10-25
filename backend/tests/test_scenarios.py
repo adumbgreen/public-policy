@@ -16,14 +16,22 @@ def test_create_fills_definition_defaults(client):
         "years": 10,
         "labor_supply_responses": False,
     }
-    assert scenario["definition"]["vat"]["enabled"] is False
+    assert scenario["definition"]["policies"] == []
 
 
 def test_read_and_update_by_slug(client):
     slug = create(client)["slug"]
     definition = {
-        "vat": {"enabled": True, "rate": 0.03, "excluded_categories": ["healthcare", "housing"]},
-        "spending_changes": [{"line_code": "defense", "mode": "percent", "value": -25}],
+        "policies": [
+            {"type": "vat", "name": "VAT", "rate": 0.03},
+            {
+                "type": "custom",
+                "name": "National health insurance",
+                "category": "spending",
+                "annual_change_usd": 3e12,
+                "index_to_inflation": True,
+            },
+        ]
     }
     response = client.put(
         f"/api/scenarios/{slug}", json={"name": "Renamed", "definition": definition}
@@ -32,8 +40,9 @@ def test_read_and_update_by_slug(client):
 
     scenario = client.get(f"/api/scenarios/{slug}").json()
     assert scenario["name"] == "Renamed"
-    assert scenario["definition"]["vat"]["rate"] == 0.03
-    assert scenario["definition"]["spending_changes"][0]["value"] == -25
+    policies = scenario["definition"]["policies"]
+    assert [p["type"] for p in policies] == ["vat", "custom"]
+    assert policies[1]["annual_change_usd"] == 3e12
 
     listed = client.get("/api/scenarios").json()
     assert [s["slug"] for s in listed] == [slug]
@@ -43,11 +52,32 @@ def test_unknown_slug_is_404(client):
     assert client.get("/api/scenarios/nope").status_code == 404
 
 
-def test_invalid_definition_is_rejected(client):
-    response = client.post(
-        "/api/scenarios", json={"name": "Bad", "definition": {"vat": {"rate": 2}}}
-    )
+def post_policies(client, policies):
+    return client.post("/api/scenarios", json={"name": "Bad", "definition": {"policies": policies}})
+
+
+def test_invalid_policy_is_rejected(client):
+    assert post_policies(client, [{"type": "vat", "name": "VAT", "rate": 2}]).status_code == 422
+    assert post_policies(client, [{"type": "unknown", "name": "?"}]).status_code == 422
+
+
+def test_conflicting_policies_are_rejected(client):
+    vat = {"type": "vat", "name": "VAT", "rate": 0.03}
+    assert post_policies(client, [vat, vat]).status_code == 422
+
+    path = "gov.irs.deductions.standard.amount.SINGLE"
+    tax_a = {"type": "income_tax", "name": "A", "parameter_values": {path: 1}}
+    tax_b = {"type": "income_tax", "name": "B", "parameter_values": {path: 2}}
+    response = post_policies(client, [tax_a, tax_b])
     assert response.status_code == 422
+    assert "'B' and 'A' both change" in response.text
+
+
+def test_presets_are_valid_policies(client):
+    presets = client.get("/api/presets").json()
+    assert {p["type"] for p in presets} == {"income_tax", "vat"}
+    response = post_policies(client, presets)
+    assert response.status_code == 201, response.text
 
 
 def test_identical_definitions_share_a_run(client):

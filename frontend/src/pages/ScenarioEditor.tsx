@@ -1,15 +1,13 @@
 import {
-  ActionIcon,
   Alert,
   Button,
   Card,
   Code,
   Group,
   Loader,
-  MultiSelect,
+  Menu,
   NumberInput,
   SegmentedControl,
-  SimpleGrid,
   Stack,
   Switch,
   Text,
@@ -19,67 +17,48 @@ import {
 } from "@mantine/core";
 import { useClipboard } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
-import { IconTrash } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 
-import { api, type NewProgram, type Scenario, type ScenarioDefinition } from "../api";
+import { api, type Policy, type Scenario, type ScenarioDefinition } from "../api";
+import { POLICY_TYPE_LABELS, PolicyCard } from "../components/PolicyCard";
 
 type Draft = Pick<Scenario, "name" | "description" | "definition">;
 
-// PolicyEngine-US filing statuses for gov.irs.deductions.standard.amount
-const FILING_STATUSES = [
-  { key: "SINGLE", label: "Single" },
-  { key: "JOINT", label: "Married filing jointly" },
-  { key: "HEAD_OF_HOUSEHOLD", label: "Head of household" },
-  { key: "SEPARATE", label: "Married filing separately" },
-  { key: "SURVIVING_SPOUSE", label: "Surviving spouse" },
-];
-
-const VAT_EXCLUSIONS = [
-  { value: "healthcare", label: "Healthcare" },
-  { value: "housing", label: "Housing" },
-];
-
-// Reform periods run from the scenario's first year onward.
-function reformPeriod(startYear: number) {
-  return `${startYear}-01-01.2100-12-31`;
-}
-
-function setParameter(
-  definition: ScenarioDefinition,
-  path: string,
-  value: number | null,
-): ScenarioDefinition {
-  const changes = { ...definition.income_tax.parameter_changes };
-  if (value === null) {
-    delete changes[path];
-  } else {
-    changes[path] = { [reformPeriod(definition.options.start_year)]: value };
-  }
-  return { ...definition, income_tax: { parameter_changes: changes } };
-}
-
-function setStartYear(definition: ScenarioDefinition, startYear: number): ScenarioDefinition {
-  const changes = Object.fromEntries(
-    Object.entries(definition.income_tax.parameter_changes).map(([path, periods]) => [
-      path,
-      { [reformPeriod(startYear)]: Object.values(periods)[0] },
-    ]),
-  );
-  return {
-    ...definition,
-    options: { ...definition.options, start_year: startYear },
-    income_tax: { parameter_changes: changes },
-  };
-}
+const NEW_POLICIES = {
+  custom: {
+    type: "custom",
+    name: "New policy",
+    description: "",
+    category: "spending",
+    annual_change_usd: 0,
+    start_year: null,
+    index_to_inflation: false,
+    source_url: null,
+  },
+  income_tax: {
+    type: "income_tax",
+    name: "Income tax change",
+    description: "",
+    parameter_values: {},
+    index_to_inflation: true,
+  },
+  vat: {
+    type: "vat",
+    name: "Value-added tax",
+    description: "",
+    rate: 0,
+    excluded_categories: [],
+  },
+} satisfies Record<string, Policy>;
 
 export function ScenarioEditor() {
   const { slug = "" } = useParams();
   const queryClient = useQueryClient();
   const clipboard = useClipboard();
   const scenario = useQuery({ queryKey: ["scenario", slug], queryFn: () => api.getScenario(slug) });
+  const presets = useQuery({ queryKey: ["presets"], queryFn: api.listPresets });
   const [draft, setDraft] = useState<Draft | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
 
@@ -122,7 +101,9 @@ export function ScenarioEditor() {
 
   const def = draft.definition;
   const setDefinition = (definition: ScenarioDefinition) => setDraft({ ...draft, definition });
-  const setPrograms = (new_programs: NewProgram[]) => setDefinition({ ...def, new_programs });
+  const setPolicies = (policies: Policy[]) => setDefinition({ ...def, policies });
+  const addPolicy = (policy: Policy) => setPolicies([...def.policies, structuredClone(policy)]);
+  const hasVat = def.policies.some((p) => p.type === "vat");
 
   return (
     <Stack maw={900}>
@@ -161,7 +142,9 @@ export function ScenarioEditor() {
             value={def.options.start_year}
             min={2026}
             max={2035}
-            onChange={(v) => typeof v === "number" && setDefinition(setStartYear(def, v))}
+            onChange={(v) =>
+              typeof v === "number" && setDefinition({ ...def, options: { ...def.options, start_year: v } })
+            }
           />
           <SegmentedControl
             value={String(def.options.years)}
@@ -186,142 +169,46 @@ export function ScenarioEditor() {
         />
       </Card>
 
-      <Card withBorder>
-        <Title order={4}>Federal income tax</Title>
-        <Text size="sm" c="dimmed" mb="sm">
-          Standard deduction by filing status. Leave blank to keep current law. Bracket and rate
-          editing comes next.
-        </Text>
-        <SimpleGrid cols={{ base: 1, sm: 2 }}>
-          {FILING_STATUSES.map(({ key, label }) => {
-            const path = `gov.irs.deductions.standard.amount.${key}`;
-            const current = def.income_tax.parameter_changes[path];
-            return (
-              <NumberInput
-                key={key}
-                label={label}
-                placeholder="Current law"
-                prefix="$"
-                thousandSeparator=","
-                min={0}
-                value={current ? Number(Object.values(current)[0]) : ""}
-                onChange={(v) => setDefinition(setParameter(def, path, typeof v === "number" ? v : null))}
-              />
-            );
-          })}
-        </SimpleGrid>
-      </Card>
-
-      <Card withBorder>
-        <Title order={4} mb="sm">
-          Value-added tax
-        </Title>
-        <Switch
-          label="Enact a national VAT"
-          checked={def.vat.enabled}
-          onChange={(e) => setDefinition({ ...def, vat: { ...def.vat, enabled: e.currentTarget.checked } })}
+      <Group justify="space-between">
+        <Title order={3}>Policies</Title>
+        <Menu position="bottom-end" width={260}>
+          <Menu.Target>
+            <Button variant="light">Add policy</Button>
+          </Menu.Target>
+          <Menu.Dropdown>
+            <Menu.Item onClick={() => addPolicy(NEW_POLICIES.custom)}>Custom policy</Menu.Item>
+            <Menu.Item onClick={() => addPolicy(NEW_POLICIES.income_tax)}>
+              {POLICY_TYPE_LABELS.income_tax}
+            </Menu.Item>
+            <Menu.Item disabled={hasVat} onClick={() => addPolicy(NEW_POLICIES.vat)}>
+              {POLICY_TYPE_LABELS.vat}
+            </Menu.Item>
+            <Menu.Item disabled>{POLICY_TYPE_LABELS.spending_change} (needs budget data)</Menu.Item>
+            <Menu.Item disabled>{POLICY_TYPE_LABELS.published_estimate} (needs budget data)</Menu.Item>
+            {!!presets.data?.length && <Menu.Label>Presets</Menu.Label>}
+            {presets.data?.map((preset) => (
+              <Menu.Item
+                key={preset.name}
+                disabled={preset.type === "vat" && hasVat}
+                onClick={() => addPolicy(preset)}
+              >
+                {preset.name}
+              </Menu.Item>
+            ))}
+          </Menu.Dropdown>
+        </Menu>
+      </Group>
+      {def.policies.length === 0 && (
+        <Text c="dimmed">No policies yet. Add one to compare it against current law.</Text>
+      )}
+      {def.policies.map((policy, i) => (
+        <PolicyCard
+          key={i}
+          policy={policy}
+          onChange={(changed) => setPolicies(def.policies.map((p, j) => (j === i ? changed : p)))}
+          onRemove={() => setPolicies(def.policies.filter((_, j) => j !== i))}
         />
-        {def.vat.enabled && (
-          <Group mt="sm" align="flex-start" grow>
-            <NumberInput
-              label="Rate"
-              suffix="%"
-              min={0}
-              max={100}
-              decimalScale={2}
-              value={Math.round(def.vat.rate * 10000) / 100}
-              onChange={(v) =>
-                typeof v === "number" && setDefinition({ ...def, vat: { ...def.vat, rate: v / 100 } })
-              }
-            />
-            <MultiSelect
-              label="Excluded from the tax base"
-              data={VAT_EXCLUSIONS}
-              value={def.vat.excluded_categories}
-              onChange={(excluded_categories) =>
-                setDefinition({ ...def, vat: { ...def.vat, excluded_categories } })
-              }
-            />
-          </Group>
-        )}
-      </Card>
-
-      <Card withBorder>
-        <Title order={4}>Spending by agency</Title>
-        <Text size="sm" c="dimmed">
-          Available once the agency-level budget baseline is loaded.
-        </Text>
-      </Card>
-
-      <Card withBorder>
-        <Title order={4}>National health insurance</Title>
-        <Text size="sm" c="dimmed">
-          Available once published cost estimates are loaded.
-        </Text>
-      </Card>
-
-      <Card withBorder>
-        <Group justify="space-between" mb="sm">
-          <Title order={4}>New programs</Title>
-          <Button
-            variant="light"
-            size="xs"
-            onClick={() =>
-              setPrograms([
-                ...def.new_programs,
-                { name: "", annual_cost_usd: 0, start_year: null, agency_code: null },
-              ])
-            }
-          >
-            Add program
-          </Button>
-        </Group>
-        {def.new_programs.length === 0 && (
-          <Text size="sm" c="dimmed">
-            No new programs.
-          </Text>
-        )}
-        <Stack>
-          {def.new_programs.map((program, i) => {
-            const update = (changes: Partial<NewProgram>) =>
-              setPrograms(def.new_programs.map((p, j) => (j === i ? { ...p, ...changes } : p)));
-            return (
-              <Group key={i} align="flex-end">
-                <TextInput
-                  label="Name"
-                  value={program.name}
-                  onChange={(e) => update({ name: e.currentTarget.value })}
-                  style={{ flex: 1 }}
-                />
-                <NumberInput
-                  label="Annual cost"
-                  prefix="$"
-                  thousandSeparator=","
-                  min={0}
-                  value={program.annual_cost_usd}
-                  onChange={(v) => update({ annual_cost_usd: typeof v === "number" ? v : 0 })}
-                />
-                <NumberInput
-                  label="Starts"
-                  placeholder="First year"
-                  min={2026}
-                  value={program.start_year ?? ""}
-                  onChange={(v) => update({ start_year: typeof v === "number" ? v : null })}
-                />
-                <ActionIcon
-                  variant="subtle"
-                  color="red"
-                  size="lg"
-                  aria-label="Remove program"
-                  onClick={() => setPrograms(def.new_programs.filter((_, j) => j !== i))}
-                >
-                  <IconTrash size={18} />
-                </ActionIcon>
-              </Group>
-            );
-          })}
-        </Stack>
-      </Card>
+      ))}
 
       {startRun.isError && <Alert color="red">{startRun.error.message}</Alert>}
       {run.data && (

@@ -1,8 +1,8 @@
 import uuid
 from datetime import date, datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class SimulationOptions(BaseModel):
@@ -11,45 +11,75 @@ class SimulationOptions(BaseModel):
     labor_supply_responses: bool = False
 
 
-class IncomeTaxPolicy(BaseModel):
-    # PolicyEngine-US parameter changes in Reform.from_dict format:
-    # {"gov.irs.deductions.standard.amount.SINGLE": {"2026-01-01.2100-12-31": 100000}}
-    parameter_changes: dict[str, dict[str, float | bool]] = Field(default_factory=dict)
+class PolicyBase(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    description: str = ""
 
 
-class VatPolicy(BaseModel):
-    enabled: bool = False
-    rate: float = Field(0.0, ge=0, le=1)
+class CustomPolicy(PolicyBase):
+    """A policy whose budget effect the user enters directly."""
+
+    type: Literal["custom"] = "custom"
+    category: Literal["spending", "revenue"]
+    # Change per year in the first year. Positive means more spending or more revenue.
+    annual_change_usd: float
+    start_year: int | None = None
+    index_to_inflation: bool = False
+    source_url: str | None = None
+
+
+class IncomeTaxPolicy(PolicyBase):
+    """Changes to PolicyEngine-US parameters, in effect from the scenario's first year."""
+
+    type: Literal["income_tax"] = "income_tax"
+    # {"gov.irs.deductions.standard.amount.SINGLE": 100000}
+    parameter_values: dict[str, float | bool] = Field(default_factory=dict)
+    # Grow the values each year with PolicyEngine's uprating for each parameter.
+    index_to_inflation: bool = True
+
+
+class VatPolicy(PolicyBase):
+    type: Literal["vat"] = "vat"
+    rate: float = Field(ge=0, le=1)
     excluded_categories: list[str] = Field(default_factory=list)
 
 
-class SpendingChange(BaseModel):
+class SpendingChangePolicy(PolicyBase):
+    type: Literal["spending_change"] = "spending_change"
     line_code: str
     mode: Literal["percent", "amount"]
     # Percent change (-25 means a 25% cut) or a change in dollars per year.
     value: float
 
 
-class NewProgram(BaseModel):
-    name: str
-    annual_cost_usd: float = Field(ge=0)
-    start_year: int | None = None
-    agency_code: str | None = None
+class PublishedEstimatePolicy(PolicyBase):
+    type: Literal["published_estimate"] = "published_estimate"
+    estimate_id: str
 
 
-class HealthInsurancePolicy(BaseModel):
-    mode: Literal["none", "published_estimate"] = "none"
-    estimate_id: str | None = None
+Policy = Annotated[
+    CustomPolicy | IncomeTaxPolicy | VatPolicy | SpendingChangePolicy | PublishedEstimatePolicy,
+    Field(discriminator="type"),
+]
 
 
 class ScenarioDefinition(BaseModel):
     schema_version: Literal[1] = 1
     options: SimulationOptions = Field(default_factory=SimulationOptions)
-    income_tax: IncomeTaxPolicy = Field(default_factory=IncomeTaxPolicy)
-    vat: VatPolicy = Field(default_factory=VatPolicy)
-    spending_changes: list[SpendingChange] = Field(default_factory=list)
-    new_programs: list[NewProgram] = Field(default_factory=list)
-    health_insurance: HealthInsurancePolicy = Field(default_factory=HealthInsurancePolicy)
+    policies: list[Policy] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def check_conflicts(self):
+        if sum(isinstance(p, VatPolicy) for p in self.policies) > 1:
+            raise ValueError("A scenario can have only one VAT policy.")
+        seen: dict[str, str] = {}
+        for policy in self.policies:
+            if isinstance(policy, IncomeTaxPolicy):
+                for path in policy.parameter_values:
+                    if path in seen:
+                        raise ValueError(f"'{policy.name}' and '{seen[path]}' both change {path}.")
+                    seen[path] = policy.name
+        return self
 
 
 class ScenarioIn(BaseModel):

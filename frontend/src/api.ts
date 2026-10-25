@@ -6,27 +6,52 @@ export type SimulationOptions = {
   labor_supply_responses: boolean;
 };
 
-export type SpendingChange = {
+type PolicyBase = { name: string; description: string };
+
+export type CustomPolicy = PolicyBase & {
+  type: "custom";
+  category: "spending" | "revenue";
+  annual_change_usd: number;
+  start_year: number | null;
+  index_to_inflation: boolean;
+  source_url: string | null;
+};
+
+export type IncomeTaxPolicy = PolicyBase & {
+  type: "income_tax";
+  parameter_values: Record<string, number | boolean>;
+  index_to_inflation: boolean;
+};
+
+export type VatPolicy = PolicyBase & {
+  type: "vat";
+  rate: number;
+  excluded_categories: string[];
+};
+
+export type SpendingChangePolicy = PolicyBase & {
+  type: "spending_change";
   line_code: string;
   mode: "percent" | "amount";
   value: number;
 };
 
-export type NewProgram = {
-  name: string;
-  annual_cost_usd: number;
-  start_year: number | null;
-  agency_code: string | null;
+export type PublishedEstimatePolicy = PolicyBase & {
+  type: "published_estimate";
+  estimate_id: string;
 };
+
+export type Policy =
+  | CustomPolicy
+  | IncomeTaxPolicy
+  | VatPolicy
+  | SpendingChangePolicy
+  | PublishedEstimatePolicy;
 
 export type ScenarioDefinition = {
   schema_version: 1;
   options: SimulationOptions;
-  income_tax: { parameter_changes: Record<string, Record<string, number | boolean>> };
-  vat: { enabled: boolean; rate: number; excluded_categories: string[] };
-  spending_changes: SpendingChange[];
-  new_programs: NewProgram[];
-  health_insurance: { mode: "none" | "published_estimate"; estimate_id: string | null };
+  policies: Policy[];
 };
 
 export type Scenario = {
@@ -83,4 +108,5 @@ export const api = {
   startRun: (slug: string) => request<Run>(`/api/scenarios/${slug}/runs`, { method: "POST" }),
   getRun: (id: string) => request<Run>(`/api/runs/${id}`),
   listSources: () => request<Source[]>("/api/sources"),
+  listPresets: () => request<Policy[]>("/api/presets"),
 };
