@@ -1,0 +1,41 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: policy
+      POSTGRES_PASSWORD: policy
+      POSTGRES_DB: policy
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "policy"]
+      interval: 2s
+      retries: 30
+
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://policy:policy@db:5432/policy
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  worker:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://policy:policy@db:5432/policy
+    command: python -m app.worker
+    restart: unless-stopped
+    depends_on:
+      - api
+
+  web:
+    build: ./frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
