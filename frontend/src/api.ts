@@ -63,7 +63,9 @@ export type Scenario = {
   updated_at: string;
 };
 
-export type ScenarioSummary = Pick<Scenario, "slug" | "name" | "updated_at">;
+export type ScenarioSummary = Pick<Scenario, "slug" | "name" | "description" | "updated_at"> & {
+  policy_names: string[];
+};
 
 export type Run = {
   id: string;
@@ -101,8 +103,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   listScenarios: () => request<ScenarioSummary[]>("/api/scenarios"),
   getScenario: (slug: string) => request<Scenario>(`/api/scenarios/${slug}`),
-  createScenario: (name: string) =>
-    request<Scenario>("/api/scenarios", { method: "POST", body: JSON.stringify({ name }) }),
+  createScenario: (name: string, policies: Policy[] = []) =>
+    request<Scenario>("/api/scenarios", {
+      method: "POST",
+      body: JSON.stringify({ name, definition: { policies } }),
+    }),
   updateScenario: (slug: string, body: Pick<Scenario, "name" | "description" | "definition">) =>
     request<Scenario>(`/api/scenarios/${slug}`, { method: "PUT", body: JSON.stringify(body) }),
   startRun: (slug: string) => request<Run>(`/api/scenarios/${slug}/runs`, { method: "POST" }),

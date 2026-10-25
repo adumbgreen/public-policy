@@ -46,6 +46,7 @@ def test_read_and_update_by_slug(client):
 
     listed = client.get("/api/scenarios").json()
     assert [s["slug"] for s in listed] == [slug]
+    assert listed[0]["policy_names"] == ["VAT", "National health insurance"]
 
 
 def test_unknown_slug_is_404(client):

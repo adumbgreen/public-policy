@@ -1,4 +1,4 @@
-import { Anchor, Loader, Stack, Table, Text, Title } from "@mantine/core";
+import { Anchor, Card, Loader, Stack, Table, Text, Title } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
 
 import { api } from "../api";
@@ -7,14 +7,25 @@ export function Sources() {
   const sources = useQuery({ queryKey: ["sources"], queryFn: api.listSources });
 
   return (
-    <Stack maw={1100}>
-      <Title order={2}>Sources</Title>
-      <Text c="dimmed">Every figure in the simulator cites one of these.</Text>
+    <Stack gap="lg">
+      <div>
+        <Title order={1}>Where the data comes from</Title>
+        <Text c="dimmed" fz="lg" mt={4}>
+          Every figure in the simulator cites one of these sources.
+        </Text>
+      </div>
       {sources.isPending && <Loader />}
       {sources.isError && <Text c="red">{sources.error.message}</Text>}
-      {sources.data?.length === 0 && <Text c="dimmed">No data has been loaded yet.</Text>}
+      {sources.data?.length === 0 && (
+        <Card className="app-card" padding="xl">
+          <Text c="dimmed" ta="center">
+            No data has been loaded yet.
+          </Text>
+        </Card>
+      )}
       {!!sources.data?.length && (
-        <Table>
+        <Card className="app-card" padding={0}>
+        <Table verticalSpacing="sm" horizontalSpacing="md">
           <Table.Thead>
             <Table.Tr>
               <Table.Th>Publisher</Table.Th>
@@ -40,6 +51,7 @@ export function Sources() {
             ))}
           </Table.Tbody>
         </Table>
+        </Card>
       )}
     </Stack>
   );

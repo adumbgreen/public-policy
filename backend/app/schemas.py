@@ -97,10 +97,10 @@ class ScenarioOut(ScenarioIn):
 
 
 class ScenarioSummary(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
     slug: str
     name: str
+    description: str
+    policy_names: list[str]
     updated_at: datetime
 
 

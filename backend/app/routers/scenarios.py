@@ -21,7 +21,17 @@ def get_scenario(slug: str, session: Session) -> Scenario:
 
 @router.get("/scenarios", response_model=list[ScenarioSummary])
 def list_scenarios(session: Session = Depends(get_session)):
-    return session.scalars(select(Scenario).order_by(Scenario.updated_at.desc()).limit(100)).all()
+    scenarios = session.scalars(select(Scenario).order_by(Scenario.updated_at.desc()).limit(100))
+    return [
+        ScenarioSummary(
+            slug=s.slug,
+            name=s.name,
+            description=s.description,
+            policy_names=[p["name"] for p in s.definition.get("policies", [])],
+            updated_at=s.updated_at,
+        )
+        for s in scenarios
+    ]
 
 
 @router.post("/scenarios", response_model=ScenarioOut, status_code=201)

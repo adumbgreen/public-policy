@@ -4,7 +4,7 @@ A web app for building federal tax and spending scenarios and seeing their effec
 
 ## Status
 
-This is the app scaffold. You can create, edit, save and share scenarios, and queue a simulation run.
+This is the app scaffold. You can create, edit and share scenarios, and queue a simulation run. Scenarios save automatically.
 
 A scenario is a list of policies. You add each one from scratch or from a preset, then name and edit it. Policy types:
 
@@ -22,7 +22,7 @@ Presets are in `backend/app/presets.py`. The simulation engine isn't built yet, 
 
 | Part | Tools |
 |---|---|
-| Frontend | React, TypeScript, Vite, Mantine, TanStack Query, React Router |
+| Frontend | React, TypeScript, Vite, Mantine, TanStack Query, React Router, Inter font |
 | API | Python, FastAPI, SQLAlchemy, Alembic, uv |
 | Worker | Same Python package. Pulls queued runs from Postgres. |
 | Database | Postgres 16 |
@@ -111,7 +111,9 @@ backend/
 frontend/
   src/
     api.ts         API client and types
-    components/    Policy editor card
-    pages/         Scenario list, scenario editor, sources
+    components/    Policy card, policy picker, impact panel
+    theme.ts       Mantine theme (colors, font, radius)
+    brand.ts       App name
+    pages/         Home, scenario workspace, sources
 docker-compose.yml
 ```
