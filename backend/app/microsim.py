@@ -8,6 +8,8 @@ the shard processes, never in the API.
 
 import math
 import multiprocessing as mp
+import os
+import pickle
 import traceback
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -107,6 +109,39 @@ def _household_arrays(sim, year: int) -> dict[str, np.ndarray]:
     }
 
 
+def _in_child_process(compute: Callable[[], dict]) -> dict:
+    """Run compute() in a forked copy of this process and return its result.
+
+    PolicyEngine holds on to memory after a simulation (about 0.7 GB per year for a 5% shard),
+    so each simulation runs in a fork that exits afterward and gives all of it back. The fork
+    shares the already loaded model and data, so it starts instantly.
+    """
+    read_fd, write_fd = os.pipe()
+    pid = os.fork()
+    if pid == 0:
+        os.close(read_fd)
+        try:
+            payload = ("ok", compute())
+        except BaseException:  # noqa: BLE001 - reported to the parent
+            payload = ("error", traceback.format_exc())
+        with os.fdopen(write_fd, "wb") as pipe:
+            pickle.dump(payload, pipe)
+        os._exit(0)
+
+    os.close(write_fd)
+    with os.fdopen(read_fd, "rb") as pipe:
+        data = pipe.read()
+    _, status = os.waitpid(pid, 0)
+    if not data:
+        raise RuntimeError(
+            f"A simulation year process died (status {status}), possibly out of memory."
+        )
+    kind, value = pickle.loads(data)
+    if kind == "error":
+        raise RuntimeError(value)
+    return value
+
+
 def _shard_main(index: int, count: int, conn) -> None:
     from policyengine_core.reforms import Reform
     from policyengine_us import Microsimulation
@@ -126,12 +161,18 @@ def _shard_main(index: int, count: int, conn) -> None:
             )
             results = {}
             for year in years:
-                data = _one_year(base, year)
                 if year not in baselines:
-                    baselines[year] = _household_arrays(Microsimulation(dataset=data), year)
+                    baselines[year] = _in_child_process(
+                        lambda year=year: _household_arrays(
+                            Microsimulation(dataset=_one_year(base, year)), year
+                        )
+                    )
                     conn.send(("progress", ("baseline", year)))
-                reformed = _household_arrays(
-                    Microsimulation(dataset=data, tax_benefit_system=reformed_system), year
+                reformed = _in_child_process(
+                    lambda year=year, system_=reformed_system: _household_arrays(
+                        Microsimulation(dataset=_one_year(base, year), tax_benefit_system=system_),
+                        year,
+                    )
                 )
                 results[year] = {
                     "weight": baselines[year]["weight"],

@@ -2,7 +2,7 @@ import { Alert, Badge, Box, Button, Card, Divider, Group, Loader, Stack, Text, T
 import { IconBolt, IconCalculator } from "@tabler/icons-react";
 
 import type { ByYear, EstimateResult, Run } from "../api";
-import { formatSignedUsd } from "../format";
+import { formatSignedUsd, formatUsd } from "../format";
 import { POLICY_META } from "../policyMeta";
 
 type Props = {
@@ -80,7 +80,7 @@ export function ImpactPanel({ result, exact, refreshing, run, starting, onRun }:
               <Row label="Interest on debt" value={total(result.totals.net_interest_change)} />
               <Divider my={6} />
               <Text fz="xs" c="dimmed">
-                CBO baseline deficit for the same years: {formatSignedUsd(total(result.baseline.deficit))}
+                CBO baseline deficit for the same years: {formatUsd(total(result.baseline.deficit))}
               </Text>
             </Box>
 

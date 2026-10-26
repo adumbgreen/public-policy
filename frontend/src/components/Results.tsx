@@ -71,10 +71,11 @@ function SignedBarChart({
       series={[{ name: "value", label }]}
       getBarColor={(value) => (value > 0 ? poles.up : poles.down)}
       maxBarWidth={24}
-      gridAxis="y"
+      gridAxis="x"
       strokeDasharray="0"
       tickLine="none"
       valueFormatter={valueFormatter}
+      yAxisProps={{ width: 72 }}
       referenceLines={[{ y: 0, color: "gray.5" }]}
       barProps={{ shape: (props: unknown) => <SignedBar {...(props as RectangleProps)} /> }}
     />
