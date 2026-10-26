@@ -63,15 +63,16 @@ def _load_shard(index: int, count: int):
     )
 
 
-def _one_year(base, year: int):
-    """The shard's households projected to one year. A simulation holding only that year's data
-    uses far less memory than one holding every year."""
-    from policyengine_us.data.dataset_schema import USMultiYearDataset
+def _through_year(base, year: int):
+    """The shard's households projected from the base year through `year`.
+
+    Some formulas read earlier years, so dropping them changes results slightly (about $11 million
+    of income tax in 2026). Each simulation runs in its own short-lived process, so holding the
+    earlier years doesn't add up across a multi-year run.
+    """
     from policyengine_us.data.economic_assumptions import extend_single_year_dataset
 
-    return USMultiYearDataset(
-        datasets=[extend_single_year_dataset(base, end_year=year).get_year(year)]
-    )
+    return extend_single_year_dataset(base, end_year=year)
 
 
 def build_reform(parameters, changes: list[Change], start_year: int, end_year: int) -> dict:
@@ -164,13 +165,15 @@ def _shard_main(index: int, count: int, conn) -> None:
                 if year not in baselines:
                     baselines[year] = _in_child_process(
                         lambda year=year: _household_arrays(
-                            Microsimulation(dataset=_one_year(base, year)), year
+                            Microsimulation(dataset=_through_year(base, year)), year
                         )
                     )
                     conn.send(("progress", ("baseline", year)))
                 reformed = _in_child_process(
                     lambda year=year, system_=reformed_system: _household_arrays(
-                        Microsimulation(dataset=_one_year(base, year), tax_benefit_system=system_),
+                        Microsimulation(
+                            dataset=_through_year(base, year), tax_benefit_system=system_
+                        ),
                         year,
                     )
                 )

@@ -39,9 +39,11 @@ To make runs fast enough to use:
 - **Shards.** Households are split across several processes that run in parallel. Each household's tax is calculated independently, so the shards' results add up exactly to a single full run.
 - **Warm processes.** Each shard process imports PolicyEngine and loads its households once, then keeps them for later runs. It also keeps the baseline results for each year it has calculated.
 - **One reform build per run.** The reformed tax system takes about 20 seconds to build, so it's built once and reused for every year.
-- **One year at a time.** Each year runs in a short-lived forked copy of the shard process, which exits afterward. PolicyEngine otherwise keeps several hundred MB per year after a simulation finishes.
+- **One simulation per process.** Each year's baseline and reform runs in a short-lived forked copy of the shard process, which exits afterward. PolicyEngine otherwise keeps several hundred MB after a simulation finishes. Each simulation gets the household data projected from 2024 through its year, because some formulas read earlier years; dropping them changed 2026 income tax by about $11 million.
 
-Measured on a 4-core, 15 GB container with 2 shards: about 4 minutes for a year's baseline and 3 more minutes for the reform. More shards on more cores finish sooner. Set the number with `ENGINE_SHARDS`. Each shard needs about 2 GB plus its share of about 8 GB of working memory.
+Measured on a 4-core, 15 GB container with 2 shards: about 4 minutes for a year's baseline and 3 more minutes for the reform, so a new 10-year scenario takes over an hour there. Baselines are kept, so later runs skip them. More shards on more cores finish sooner. Set the number with `ENGINE_SHARDS`. With 2 shards, each shard process uses about 2 GB and its simulation up to about 4 GB more (2035 is the largest).
+
+Checked against a single full PolicyEngine run for 2026: the sharded baseline and reform totals match to the dollar.
 
 ## Run it with Docker
 
