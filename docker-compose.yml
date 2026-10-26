@@ -25,8 +25,13 @@ services:
     build: ./backend
     environment:
       DATABASE_URL: postgresql+psycopg://policy:policy@db:5432/policy
+      # About 6 GB of memory per shard at 2 shards, less per shard with more of them.
+      ENGINE_SHARDS: ${ENGINE_SHARDS:-2}
     command: python -m app.worker
     restart: unless-stopped
+    volumes:
+      # PolicyEngine's household dataset (about 830 MB) downloads here on the first run.
+      - hfcache:/root/.cache/huggingface
     depends_on:
       - api
 
@@ -39,3 +44,4 @@ services:
 
 volumes:
   pgdata:
+  hfcache:

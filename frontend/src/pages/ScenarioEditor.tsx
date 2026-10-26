@@ -16,9 +16,9 @@ import {
   Title,
   Tooltip,
 } from "@mantine/core";
-import { useClipboard, useDisclosure } from "@mantine/hooks";
+import { useClipboard, useDebouncedValue, useDisclosure } from "@mantine/hooks";
 import { IconArrowLeft, IconCheck, IconInfoCircle, IconLink, IconPlus } from "@tabler/icons-react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
@@ -26,6 +26,7 @@ import { api, type Policy, type Scenario, type ScenarioDefinition } from "../api
 import { AddPolicyModal } from "../components/AddPolicyModal";
 import { ImpactPanel } from "../components/ImpactPanel";
 import { PolicyCard } from "../components/PolicyCard";
+import { Results } from "../components/Results";
 
 type Draft = Pick<Scenario, "name" | "description" | "definition">;
 
@@ -41,6 +42,8 @@ export function ScenarioEditor() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [expanded, setExpanded] = useState<number | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
+  // The definition the current run scores, so edits made afterward fall back to the live estimate.
+  const [runDefinition, setRunDefinition] = useState<string | null>(null);
   const savedJson = useRef<string | null>(null);
 
   // Load the scenario into the draft once per slug. Later saves don't overwrite edits in progress.
@@ -75,7 +78,10 @@ export function ScenarioEditor() {
       if (JSON.stringify(body) !== savedJson.current) await save.mutateAsync(body);
       return api.startRun(slug);
     },
-    onSuccess: (run) => setRunId(run.id),
+    onSuccess: (run, body) => {
+      setRunId(run.id);
+      setRunDefinition(JSON.stringify(body.definition));
+    },
   });
 
   const run = useQuery({
@@ -86,10 +92,23 @@ export function ScenarioEditor() {
       query.state.data?.status === "succeeded" || query.state.data?.status === "failed" ? false : 1500,
   });
 
+  // Instant budget estimate while editing. Income tax changes stay pending until a run.
+  const definitionJson = draft ? JSON.stringify(draft.definition) : null;
+  const [debouncedDefinition] = useDebouncedValue(definitionJson, 400);
+  const estimate = useQuery({
+    queryKey: ["estimate", debouncedDefinition],
+    queryFn: () => api.estimate(JSON.parse(debouncedDefinition!)),
+    enabled: debouncedDefinition !== null,
+    placeholderData: keepPreviousData,
+  });
+
   if (scenario.isError) return <Text c="red">{scenario.error.message}</Text>;
   if (!draft) return <Loader />;
 
   const def = draft.definition;
+  const runIsCurrent = runDefinition === definitionJson;
+  const exact = runIsCurrent && run.data?.status === "succeeded" ? run.data.result : null;
+  const shown = exact ?? estimate.data;
   const dirty = JSON.stringify(draft) !== savedJson.current;
   const setDefinition = (definition: ScenarioDefinition) => setDraft({ ...draft, definition });
   const setOptions = (options: Partial<ScenarioDefinition["options"]>) =>
@@ -256,13 +275,17 @@ export function ScenarioEditor() {
         </Grid.Col>
         <Grid.Col span={{ base: 12, md: 4 }}>
           <ImpactPanel
-            definition={def}
-            run={run.data}
+            result={shown}
+            exact={exact !== null}
+            refreshing={exact === null && (estimate.isFetching || definitionJson !== debouncedDefinition)}
+            run={runIsCurrent ? run.data : undefined}
             starting={startRun.isPending}
             onRun={() => startRun.mutate(draft)}
           />
         </Grid.Col>
       </Grid>
+
+      {shown && def.policies.length > 0 && <Results result={shown} />}
 
       <AddPolicyModal
         opened={pickerOpened}

@@ -47,6 +47,8 @@ class VatPolicy(PolicyBase):
 class SpendingChangePolicy(PolicyBase):
     type: Literal["spending_change"] = "spending_change"
     line_code: str
+    # Display name of the budget line, so summaries don't need a lookup.
+    line_name: str = ""
     mode: Literal["percent", "amount"]
     # Percent change (-25 means a 25% cut) or a change in dollars per year.
     value: float
@@ -110,6 +112,7 @@ class RunOut(BaseModel):
     id: uuid.UUID
     status: Literal["queued", "running", "succeeded", "failed"]
     engine_version: str
+    progress: str | None
     result: dict | None
     error: str | None
     created_at: datetime

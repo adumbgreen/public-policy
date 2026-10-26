@@ -2,7 +2,8 @@
 
 Usage: python -m app.seed
 
-Replaces everything in sources, budget_lines and budget_values. Scenarios aren't touched.
+Replaces everything in sources, budget_lines, budget_values and economic_values. Scenarios aren't
+touched.
 """
 
 import csv
@@ -17,7 +18,7 @@ from sqlalchemy import insert, text
 from sqlalchemy.orm import Session
 
 from app.db import SessionLocal
-from app.models import BudgetLine, BudgetValue, Source
+from app.models import BudgetLine, BudgetValue, EconomicValue, Source
 
 SEED_DIR = Path(__file__).resolve().parent.parent / "data" / "seed"
 BILLION = Decimal(1_000_000_000)
@@ -138,11 +139,50 @@ def load_outlays(session: Session, source: Source) -> None:
     )
 
 
+def load_economic(session: Session, ten_year: Source, economic: Source) -> None:
+    """CPI-U for inflation indexing and the average interest rate on debt for debt service."""
+    values = []
+    for row in csv.DictReader((SEED_DIR / "cbo/2026-02/economic_projections_fiscal.csv").open()):
+        if row["variable"] == "cpiu" and row["value"]:
+            values.append(
+                {
+                    "series": "cpiu",
+                    "fiscal_year": int(row["date"]),
+                    "basis": row["estimate_type"],
+                    "value": Decimal(row["value"]),
+                    "source_id": economic.id,
+                }
+            )
+    rows = [
+        r
+        for r in csv.DictReader((SEED_DIR / "cbo/2026-02/ten_year_budget.csv").open())
+        if r["variable"] == "proj_debt_avg_interest_rate" and r["value"]
+    ]
+    first_year = min(fiscal_year(r["date"]) for r in rows)
+    for row in rows:
+        year = fiscal_year(row["date"])
+        values.append(
+            {
+                "series": "debt_avg_interest_rate_pct",
+                "fiscal_year": year,
+                "basis": "actual" if year == first_year else "projected",
+                "value": Decimal(row["value"]),
+                "source_id": ten_year.id,
+            }
+        )
+    session.execute(insert(EconomicValue), values)
+
+
 def seed(session: Session) -> None:
-    session.execute(text("TRUNCATE budget_values, budget_lines, sources RESTART IDENTITY CASCADE"))
+    session.execute(
+        text(
+            "TRUNCATE economic_values, budget_values, budget_lines, sources RESTART IDENTITY CASCADE"
+        )
+    )
     sources = load_sources(session)
     load_revenue(session, sources["cbo_ten_year_2026_02"])
     load_outlays(session, sources["cbo_spending_detail_2026_02"])
+    load_economic(session, sources["cbo_ten_year_2026_02"], sources["cbo_economic_2026_02"])
     session.commit()
 
 

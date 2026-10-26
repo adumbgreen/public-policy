@@ -1,4 +1,6 @@
 from app import worker
+from app.db import SessionLocal
+from app.seed import seed
 
 
 def create(client, **overrides):
@@ -76,7 +78,7 @@ def test_conflicting_policies_are_rejected(client):
 
 def test_presets_are_valid_policies(client):
     presets = client.get("/api/presets").json()
-    assert {p["type"] for p in presets} == {"income_tax", "vat"}
+    assert {p["type"] for p in presets} == {"income_tax", "vat", "spending_change"}
     response = post_policies(client, presets)
     assert response.status_code == 201, response.text
 
@@ -90,16 +92,34 @@ def test_identical_definitions_share_a_run(client):
     assert run_a["id"] == run_b["id"]
 
 
-def test_worker_records_engine_failure(client):
-    slug = create(client)["slug"]
+def test_worker_runs_a_scenario(client):
+    with SessionLocal() as session:
+        seed(session)
+    policy = {"type": "custom", "name": "C", "category": "spending", "annual_change_usd": 1e9}
+    slug = create(client, definition={"policies": [policy]})["slug"]
     run_id = client.post(f"/api/scenarios/{slug}/runs").json()["id"]
 
     assert worker.process_next() is True
     assert worker.process_next() is False
 
     run = client.get(f"/api/runs/{run_id}").json()
+    assert run["status"] == "succeeded", run["error"]
+    assert run["result"]["totals"]["outlay_change"]["2026"] == 1e9
+    assert run["progress"] is None
+
+
+def test_worker_records_failures(client, monkeypatch):
+    def broken(*args, **kwargs):
+        raise RuntimeError("shard failed")
+
+    monkeypatch.setattr(worker.engine, "run", broken)
+    slug = create(client)["slug"]
+    run_id = client.post(f"/api/scenarios/{slug}/runs").json()["id"]
+    worker.process_next()
+
+    run = client.get(f"/api/runs/{run_id}").json()
     assert run["status"] == "failed"
-    assert "isn't built yet" in run["error"]
+    assert run["error"] == "shard failed"
 
     # A failed run isn't reused; asking again queues a new one.
     retry = client.post(f"/api/scenarios/{slug}/runs").json()

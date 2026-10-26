@@ -1,154 +1,167 @@
-import { Alert, Box, Button, Card, Code, Divider, Group, Loader, Stack, Text, ThemeIcon } from "@mantine/core";
-import { IconBolt, IconCalculator, IconChartBar, IconHome, IconUsers } from "@tabler/icons-react";
+import { Alert, Badge, Box, Button, Card, Divider, Group, Loader, Stack, Text, ThemeIcon } from "@mantine/core";
+import { IconBolt, IconCalculator } from "@tabler/icons-react";
 
-import type { Run, ScenarioDefinition } from "../api";
+import type { ByYear, EstimateResult, Run } from "../api";
 import { formatSignedUsd } from "../format";
 import { POLICY_META } from "../policyMeta";
 
 type Props = {
-  definition: ScenarioDefinition;
+  result: EstimateResult | undefined;
+  exact: boolean;
+  refreshing: boolean;
   run: Run | undefined;
   starting: boolean;
   onRun: () => void;
 };
 
-const COMING = [
-  { icon: IconChartBar, label: "Deficit change, year by year" },
-  { icon: IconUsers, label: "Who gains and who pays, by income group" },
-  { icon: IconHome, label: "What it means for an example household" },
-];
+const total = (values: ByYear) => Object.values(values).reduce((sum, v) => sum + v, 0);
 
-export function ImpactPanel({ definition, run, starting, onRun }: Props) {
-  const { start_year, years } = definition.options;
-  const horizon = years === 1 ? `${start_year}` : `${start_year}–${start_year + years - 1}`;
-  const custom = definition.policies.filter((p) => p.type === "custom");
-  const modeled = definition.policies.filter((p) => p.type !== "custom");
-  const spending = custom.filter((p) => p.category === "spending").reduce((t, p) => t + p.annual_change_usd, 0);
-  const revenue = custom.filter((p) => p.category === "revenue").reduce((t, p) => t + p.annual_change_usd, 0);
-  const busy = starting || run?.status === "queued" || run?.status === "running";
+const STATUS_LABELS = {
+  pending: "Needs a simulation run",
+  not_modeled: "Not modeled yet",
+} as const;
+
+function Row({ label, value }: { label: string; value: number }) {
+  return (
+    <Group justify="space-between" wrap="nowrap">
+      <Text fz="sm" c="dimmed">
+        {label}
+      </Text>
+      <Text fz="sm" fw={600}>
+        {formatSignedUsd(value)}
+      </Text>
+    </Group>
+  );
+}
+
+export function ImpactPanel({ result, exact, refreshing, run, starting, onRun }: Props) {
+  const running = starting || run?.status === "queued" || run?.status === "running";
+  const pending = result?.policies.some((p) => p.status === "pending") ?? false;
+  const years = result?.years ?? [];
+  const horizon = years.length > 1 ? `${years[0]}–${years[years.length - 1]}` : `${years[0] ?? ""}`;
 
   return (
     <Card className="app-card" padding="lg" style={{ position: "sticky", top: 88 }}>
-      <Stack gap="lg">
+      <Stack gap="lg" style={{ opacity: refreshing ? 0.6 : 1, transition: "opacity 150ms" }}>
         <Group justify="space-between">
           <Text fw={700} fz="lg">
             Impact
           </Text>
-          <Text c="dimmed" fz="sm">
-            {horizon}
-          </Text>
+          {result &&
+            (result.complete ? (
+              <Badge variant="light" color="indigo">
+                {exact ? "Simulated" : "Calculated"}
+              </Badge>
+            ) : (
+              <Badge variant="light" color="gray">
+                Partial
+              </Badge>
+            ))}
         </Group>
 
-        <Box>
-          <Text c="dimmed" fz="sm">
-            Change in the deficit
-          </Text>
-          <Text className="app-big-number" c="dimmed">
-            —
-          </Text>
-          <Text c="dimmed" fz="xs" mt={6}>
-            Appears here once the simulation engine is connected.
-          </Text>
-        </Box>
+        {!result && <Loader size="sm" />}
+        {result && (
+          <>
+            <Box>
+              <Text c="dimmed" fz="sm">
+                Change in the deficit, {horizon}
+              </Text>
+              <Text className="app-big-number">{formatSignedUsd(total(result.totals.deficit_change))}</Text>
+              {!result.complete && (
+                <Text c="dimmed" fz="xs" mt={6}>
+                  Doesn't include policies marked below.
+                </Text>
+              )}
+            </Box>
 
-        {custom.length > 0 && (
-          <Box>
-            <Text fz="sm" fw={600} mb={6}>
-              Amounts you entered, first year
-            </Text>
-            <Group justify="space-between">
-              <Text fz="sm" c="dimmed">
-                Spending
+            <Box>
+              <Row label="Revenue" value={total(result.totals.revenue_change)} />
+              <Row label="Spending" value={total(result.totals.outlay_change)} />
+              <Row label="Interest on debt" value={total(result.totals.net_interest_change)} />
+              <Divider my={6} />
+              <Text fz="xs" c="dimmed">
+                CBO baseline deficit for the same years: {formatSignedUsd(total(result.baseline.deficit))}
               </Text>
-              <Text fz="sm" fw={600}>
-                {formatSignedUsd(spending)}
-              </Text>
-            </Group>
-            <Group justify="space-between">
-              <Text fz="sm" c="dimmed">
-                Revenue
-              </Text>
-              <Text fz="sm" fw={600}>
-                {formatSignedUsd(revenue)}
-              </Text>
-            </Group>
-            <Divider my={6} />
-            <Group justify="space-between">
-              <Text fz="sm" c="dimmed">
-                Deficit effect
-              </Text>
-              <Text fz="sm" fw={700}>
-                {formatSignedUsd(spending - revenue)}
-              </Text>
-            </Group>
-          </Box>
+            </Box>
+
+            {result.policies.length > 0 && (
+              <Stack gap={8}>
+                <Text fz="sm" fw={600}>
+                  By policy, effect on the deficit
+                </Text>
+                {result.policies.map((p, i) => {
+                  const meta = POLICY_META[p.type];
+                  const effect = total(p.outlay_change) - total(p.revenue_change);
+                  return (
+                    <Group key={i} justify="space-between" wrap="nowrap" gap="xs">
+                      <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
+                        <ThemeIcon variant="light" color={meta.color} size="sm">
+                          <meta.icon size={12} />
+                        </ThemeIcon>
+                        <Text fz="sm" truncate>
+                          {p.name}
+                        </Text>
+                      </Group>
+                      {p.status === "pending" || p.status === "not_modeled" ? (
+                        <Text fz="xs" c="dimmed" ta="right" style={{ flexShrink: 0 }}>
+                          {STATUS_LABELS[p.status]}
+                        </Text>
+                      ) : (
+                        <Text fz="sm" fw={600} style={{ flexShrink: 0 }}>
+                          {formatSignedUsd(effect)}
+                        </Text>
+                      )}
+                    </Group>
+                  );
+                })}
+              </Stack>
+            )}
+          </>
         )}
 
-        {modeled.length > 0 && (
-          <Box>
-            <Text fz="sm" fw={600} mb={6}>
-              Calculated by the model
-            </Text>
-            <Stack gap={6}>
-              {modeled.map((p, i) => {
-                const meta = POLICY_META[p.type];
-                return (
-                  <Group key={i} gap="xs" wrap="nowrap">
-                    <ThemeIcon variant="light" color={meta.color} size="sm">
-                      <meta.icon size={12} />
-                    </ThemeIcon>
-                    <Text fz="sm" truncate>
-                      {p.name}
-                    </Text>
-                  </Group>
-                );
-              })}
-            </Stack>
-          </Box>
+        {pending && (
+          <Button
+            size="md"
+            variant="gradient"
+            fullWidth
+            leftSection={running ? undefined : <IconBolt size={18} />}
+            loading={running}
+            onClick={onRun}
+          >
+            Run simulation
+          </Button>
         )}
-
-        <Button
-          size="md"
-          variant="gradient"
-          fullWidth
-          leftSection={busy ? undefined : <IconBolt size={18} />}
-          loading={busy}
-          disabled={definition.policies.length === 0}
-          onClick={onRun}
-        >
-          Run simulation
-        </Button>
-
-        {run?.status === "failed" && (
-          <Alert color="orange" variant="light" title="Results aren't available yet" icon={<IconCalculator size={18} />}>
-            <Text fz="sm">{run.error}</Text>
-          </Alert>
-        )}
-        {run?.status === "succeeded" && <Code block>{JSON.stringify(run.result, null, 2)}</Code>}
-        {busy && (
+        {running && (
           <Group gap="xs">
             <Loader size="xs" />
             <Text fz="sm" c="dimmed">
-              {run?.status === "running" ? "Simulating households…" : "Queued"}
+              {run?.progress ?? (run?.status === "running" ? "Starting" : "Queued")}
             </Text>
           </Group>
         )}
-
-        <Box>
-          <Text fz="xs" c="dimmed" fw={600} tt="uppercase" mb={8}>
-            What you'll see
+        {pending && !running && (
+          <Text fz="xs" c="dimmed">
+            Income tax changes run on PolicyEngine's model of US households. It takes a few minutes per
+            year; finished runs are saved.
           </Text>
-          <Stack gap={8}>
-            {COMING.map(({ icon: Icon, label }) => (
-              <Group key={label} gap="xs" wrap="nowrap">
-                <Icon size={16} color="var(--mantine-color-indigo-5)" />
-                <Text fz="sm" c="dimmed">
-                  {label}
-                </Text>
-              </Group>
+        )}
+        {run?.status === "failed" && (
+          <Alert color="orange" variant="light" title="The simulation failed" icon={<IconCalculator size={18} />}>
+            <Text fz="sm" style={{ whiteSpace: "pre-wrap" }}>
+              {run.error?.split("\n").slice(-3).join("\n")}
+            </Text>
+          </Alert>
+        )}
+
+        {result?.notes && (
+          <Stack gap={4}>
+            {result.notes.map((note) => (
+              <Text key={note} fz="xs" c="dimmed">
+                {note}
+              </Text>
             ))}
           </Stack>
-        </Box>
+        )}
       </Stack>
     </Card>
   );

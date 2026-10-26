@@ -3,7 +3,7 @@ import { Badge, Card, Group, Modal, SimpleGrid, Stack, Text, ThemeIcon } from "@
 import type { Policy } from "../api";
 import { POLICY_META } from "../policyMeta";
 
-const BLANK_POLICIES: Record<"custom" | "income_tax" | "vat", Policy> = {
+const BLANK_POLICIES: Record<"custom" | "income_tax" | "vat" | "spending_change", Policy> = {
   custom: {
     type: "custom",
     name: "New policy",
@@ -27,6 +27,15 @@ const BLANK_POLICIES: Record<"custom" | "income_tax" | "vat", Policy> = {
     description: "",
     rate: 0.05,
     excluded_categories: [],
+  },
+  spending_change: {
+    type: "spending_change",
+    name: "Agency spending change",
+    description: "",
+    line_code: "",
+    line_name: "",
+    mode: "percent",
+    value: -10,
   },
 };
 
@@ -98,7 +107,7 @@ export function AddPolicyModal({ opened, onClose, onAdd, presets, hasVat }: Prop
             Build your own
           </Text>
           <SimpleGrid cols={{ base: 1, sm: 2 }}>
-            {(["custom", "income_tax", "vat"] as const).map((type) => (
+            {(["custom", "income_tax", "vat", "spending_change"] as const).map((type) => (
               <Tile
                 key={type}
                 type={type}
@@ -108,16 +117,13 @@ export function AddPolicyModal({ opened, onClose, onAdd, presets, hasVat }: Prop
                 onClick={() => add(BLANK_POLICIES[type])}
               />
             ))}
-            {(["spending_change", "published_estimate"] as const).map((type) => (
-              <Tile
-                key={type}
-                type={type}
-                title={POLICY_META[type].label}
-                body={POLICY_META[type].blurb}
-                disabledReason="Needs budget data"
-                onClick={() => {}}
-              />
-            ))}
+            <Tile
+              type="published_estimate"
+              title={POLICY_META.published_estimate.label}
+              body={POLICY_META.published_estimate.blurb}
+              disabledReason="Coming soon"
+              onClick={() => {}}
+            />
           </SimpleGrid>
         </Stack>
         {presets.length > 0 && (

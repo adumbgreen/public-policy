@@ -20,5 +20,16 @@
     "published_on": null,
     "retrieved_on": "2026-10-25",
     "notes": "February 2026 baseline vintage. CSV from CBO's open-data repository: https://raw.githubusercontent.com/US-CBO/cbo-data/284a95665f9f/data/budget/spending_detail/annual_fy_2026-02.csv. Outlays are in millions of dollars."
+  },
+  {
+    "key": "cbo_economic_2026_02",
+    "file": "cbo/2026-02/economic_projections_fiscal.csv",
+    "publisher": "Congressional Budget Office",
+    "title": "10-Year Economic Projections (The Budget and Economic Outlook: 2026 to 2036)",
+    "url": "https://www.cbo.gov/publication/51135",
+    "table_or_page": "Fiscal-year projections: CPI-U, all urban consumers",
+    "published_on": "2026-02-11",
+    "retrieved_on": "2026-10-26",
+    "notes": "February 2026 vintage. CSV from CBO's open-data repository: https://raw.githubusercontent.com/US-CBO/cbo-data/284a95665f9f/data/economic/economic_projections/fiscal_2026-02.csv. Values marked actual or projected by CBO."
   }
 ]

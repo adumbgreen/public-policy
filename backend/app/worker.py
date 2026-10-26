@@ -31,14 +31,21 @@ def process_next() -> bool:
         run.started_at = datetime.now()
         session.commit()
 
+        def progress(text: str) -> None:
+            run.progress = text
+            session.commit()
+
         try:
-            run.result = engine.run(ScenarioDefinition.model_validate(run.definition))
+            run.result = engine.run(
+                ScenarioDefinition.model_validate(run.definition), session, progress
+            )
             run.status = "succeeded"
         except Exception as exc:
             log.exception("Run %s failed", run.id)
             run.status = "failed"
             run.error = str(exc)
         run.finished_at = datetime.now()
+        run.progress = None
         session.commit()
         return True
 

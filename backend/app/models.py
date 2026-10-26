@@ -56,6 +56,20 @@ class BudgetValue(Base):
     source: Mapped[Source] = relationship()
 
 
+class EconomicValue(Base):
+    """An economic series value by fiscal year, such as CPI-U or the interest rate on debt."""
+
+    __tablename__ = "economic_values"
+    __table_args__ = (UniqueConstraint("series", "fiscal_year"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    series: Mapped[str] = mapped_column(String(100))
+    fiscal_year: Mapped[int]
+    basis: Mapped[str] = mapped_column(String(20))  # "actual" or "projected"
+    value: Mapped[Decimal] = mapped_column(Numeric(20, 6))
+    source_id: Mapped[int] = mapped_column(ForeignKey("sources.id"))
+
+
 class Scenario(Base):
     __tablename__ = "scenarios"
 
@@ -77,6 +91,7 @@ class SimulationRun(Base):
     definition_hash: Mapped[str] = mapped_column(String(64), index=True)
     engine_version: Mapped[str] = mapped_column(String(50))
     status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
+    progress: Mapped[str | None] = mapped_column(Text)
     result: Mapped[dict | None] = mapped_column(JSONB)
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

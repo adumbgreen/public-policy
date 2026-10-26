@@ -79,10 +79,12 @@ export function summarize(policy: Policy): string {
         ? `${rate} · excludes ${policy.excluded_categories.join(", ")}`
         : rate;
     }
-    case "spending_change":
+    case "spending_change": {
+      const target = policy.line_name || "an agency (pick one)";
       return policy.mode === "percent"
-        ? `${policy.value > 0 ? "+" : ""}${policy.value}% to ${policy.line_code}`
-        : `${formatSignedUsd(policy.value)}/yr to ${policy.line_code}`;
+        ? `${policy.value > 0 ? "+" : ""}${policy.value}% to ${target}`
+        : `${formatSignedUsd(policy.value)}/yr to ${target}`;
+    }
     case "published_estimate":
       return policy.estimate_id;
   }

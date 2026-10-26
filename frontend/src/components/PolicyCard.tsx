@@ -7,6 +7,7 @@ import {
   Collapse,
   Group,
   NumberInput,
+  SegmentedControl,
   Select,
   SimpleGrid,
   Slider,
@@ -19,9 +20,18 @@ import {
   UnstyledButton,
 } from "@mantine/core";
 import { IconChevronDown, IconTrash } from "@tabler/icons-react";
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
-import type { CustomPolicy, IncomeTaxPolicy, Policy, VatPolicy } from "../api";
+import {
+  api,
+  type CustomPolicy,
+  type IncomeTaxPolicy,
+  type Policy,
+  type SpendingChangePolicy,
+  type VatPolicy,
+} from "../api";
+import { formatSignedUsd, formatUsd } from "../format";
 import { POLICY_META, summarize } from "../policyMeta";
 
 // PolicyEngine-US filing statuses for gov.irs.deductions.standard.amount
@@ -109,9 +119,12 @@ export function PolicyCard({ policy, onChange, expanded, onToggle, onRemove }: C
           {policy.type === "custom" && <CustomFields policy={policy} onChange={onChange} />}
           {policy.type === "income_tax" && <IncomeTaxFields policy={policy} onChange={onChange} />}
           {policy.type === "vat" && <VatFields policy={policy} onChange={onChange} />}
-          {(policy.type === "spending_change" || policy.type === "published_estimate") && (
+          {policy.type === "spending_change" && (
+            <SpendingChangeFields policy={policy} onChange={onChange} />
+          )}
+          {policy.type === "published_estimate" && (
             <Text size="sm" c="dimmed">
-              This policy type needs the budget data, which isn't loaded yet.
+              Published estimates aren't loaded yet.
             </Text>
           )}
         </Stack>
@@ -280,6 +293,65 @@ function VatFields({ policy, onChange }: Props<VatPolicy>) {
           </Group>
         </Chip.Group>
       </div>
+    </Stack>
+  );
+}
+
+function SpendingChangeFields({ policy, onChange }: Props<SpendingChangePolicy>) {
+  const agencies = useQuery({ queryKey: ["agencies"], queryFn: api.listAgencies, staleTime: Infinity });
+  const line = agencies.data?.find((a) => a.code === policy.line_code);
+  const baseline = line?.outlays_usd ?? null;
+  const change =
+    baseline === null ? null : policy.mode === "percent" ? (baseline * policy.value) / 100 : policy.value;
+
+  return (
+    <Stack gap="md">
+      <Select
+        label="Agency"
+        placeholder={agencies.isPending ? "Loading agencies…" : "Search agencies"}
+        searchable
+        nothingFoundMessage="No matching agency"
+        data={(agencies.data ?? []).map((a) => ({
+          value: a.code,
+          label: `${a.name}${a.outlays_usd ? ` (${formatUsd(a.outlays_usd)})` : ""}`,
+        }))}
+        value={policy.line_code || null}
+        onChange={(code) => {
+          const picked = agencies.data?.find((a) => a.code === code);
+          onChange({ ...policy, line_code: code ?? "", line_name: picked?.name ?? "" });
+        }}
+      />
+      <Group align="flex-end" grow>
+        <Stack gap={4}>
+          <Text size="sm" fw={500}>
+            Change by
+          </Text>
+          <SegmentedControl
+            value={policy.mode}
+            onChange={(mode) => onChange({ ...policy, mode: mode as SpendingChangePolicy["mode"], value: 0 })}
+            data={[
+              { value: "percent", label: "Percent" },
+              { value: "amount", label: "Dollars per year" },
+            ]}
+          />
+        </Stack>
+        <NumberInput
+          label={policy.mode === "percent" ? "Percent change" : "Change per year"}
+          description="Negative for a cut"
+          prefix={policy.mode === "amount" ? "$" : undefined}
+          suffix={policy.mode === "percent" ? "%" : undefined}
+          thousandSeparator=","
+          min={policy.mode === "percent" ? -100 : undefined}
+          value={policy.value}
+          onChange={(v) => onChange({ ...policy, value: typeof v === "number" ? v : 0 })}
+        />
+      </Group>
+      {baseline !== null && change !== null && (
+        <Text size="sm" c="dimmed">
+          FY2026 baseline {formatUsd(baseline)} ({line?.name}). This changes it by {formatSignedUsd(change)} in
+          2026, and by the same {policy.mode === "percent" ? "percent of CBO's baseline" : "amount"} each later year.
+        </Text>
+      )}
     </Stack>
   );
 }

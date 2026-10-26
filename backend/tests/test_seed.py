@@ -43,7 +43,7 @@ def test_seed_reconciles_with_cbo_totals():
 def test_every_value_cites_a_source():
     with SessionLocal() as session:
         seed(session)
-        assert session.scalar(select(func.count(Source.id))) == 2
+        assert session.scalar(select(func.count(Source.id))) == 3
         missing = session.scalar(
             select(func.count(BudgetValue.id)).where(BudgetValue.source_id.is_(None))
         )

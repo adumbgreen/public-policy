@@ -1,6 +1,6 @@
 """Ready-made policies a user can add to a scenario and then edit.
 
-Presets that need the budget baseline or published estimates are added once that data is loaded.
+Presets that need data that isn't loaded yet (published estimates, the VAT model) come later.
 """
 
 from pydantic import TypeAdapter
@@ -34,6 +34,21 @@ PRESETS: list[dict] = [
         "excluded_categories": ["healthcare", "housing"],
     },
 ]
+
+PRESETS.append(
+    {
+        "type": "spending_change",
+        "name": "Cut defense spending 25%",
+        "description": (
+            "Cuts outlays for the Department of Defense (military programs) by 25% from CBO's "
+            "baseline in every year."
+        ),
+        "line_code": "agency:department-of-defense-military-programs",
+        "line_name": "Department of Defense--Military Programs",
+        "mode": "percent",
+        "value": -25,
+    }
+)
 
 # Fail at import if a preset doesn't match the policy schema.
 _adapter = TypeAdapter(list[Policy])
